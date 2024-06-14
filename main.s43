@@ -1,62 +1,58 @@
 #include  "bsplab5.h"
 
              NAME   MAIN
-             PUBLIC main, state, Max2, Divided, Divisor, Quotient, Residue, result1, result2, Vmax
-             EXTERN SysConfig,STATE1FUNC, STATE2FUNC, STATE3FUNC, TIMER3Con, EnableTimerOutput, PORT1_ISR
-             EXTERN PORT2_ISR, ADC_VEC
+             PUBLIC main, state, timer, minutes, timer_int_flag, string_state_counter
+             EXTERN SysConfig,STATE1FUNC, STATE2FUNC
+             EXTERN PORT2_ISR, TA0_ISR, TIMER_CAPTURE_ISR
+             EXTERN PrintLEDs,ReadSWs
 
 ;----------------------------------------------------------------------------------
              ORG      DataSegStart         ; Begins a DATA segment
 state                    DW   0                        ; state variable
-Max2                     DW   0
-Divided                  DW   0
-Divisor                  DW   0
-Quotient                 DW   0
-Residue                  DW   0
-result1                  DW   0
-result2                  DW   0
-Vmax                     DW   0
+timer                    DW   0
+minutes                  DW   0
+timer_int_flag           DW   0
+string_state_counter     DW   0
+
 ;-------------------------------------------------------------------------------------
              ORG     CodeSegStart       ; Program Reset = Begins a CODE segment
              
 main         mov.w   #StackTosStart,SP  ; Initialize stack pointer to the RAM end
 StopWDT      mov.w   #WDTPW+WDTHOLD,&WDTCTL  
              call    #SysConfig         ; call to func in hal
-             ;bis.b #0x80, PBsArrIntEn
-            ;call #TIMER3Con
-            ;call #EnableTimerOutput
+
 ;---------------------- FSM_loop -------------------------------------
 
 state0       cmp     #0x00, state       ;check if state0  
              jnz     state1
-             bis.w   #CPUOFF+GIE,SR ; lpm
+             bis.w   #CPUOFF+GIE+SCG0+SCG1,SR ; lpm
              nop
 
-state1       cmp     #1,state         ;check if state1           
+state1       cmp     #PB0,state         ;check if state1           
              jnz     state2
              call    #STATE1FUNC
              
 
-state2       cmp     #2,state         ;check if state2
+state2       cmp     #PB1,state         ;check if state2
              jnz     default
              call    #STATE2FUNC
-            
-state3       cmp     #3,state         ;check if state3
-             jnz     default
-             ;call    #STATE3FUNC
 
 default      mov #0, state  ;; go back to state 0
              jmp state0
              nop
-
+             
 ;--------------------------------------------------------------------------------------
 ;*******************************************************************************
             COMMON  INTVEC  ;Interrupt Vectors-Begins a common segment INTVEC 
-;*******************************************************************************         
-            ORG     PORT1_VECTOR            ;PORT1 Interrupt Vector
-            DW      PORT1_ISR
-            ORG     ADC10_VECTOR            ; ADC10 Interrupt Vector
-            DW      ADC_VEC
+;*******************************************************************************
+            ORG     TIMER_COUNT        ; Timer0_A0 Vector
+            DW      TA0_ISR          
+            ORG     TIMER_VECTOR        ; TIMERA1_VECTOR Vector
+            DW      TIMER_CAPTURE_ISR
+            ORG     PORT2_VECTOR            ;PORT2 Interrupt Vector
+            DW      PORT2_ISR
+            ORG     RESET_VECTOR            ; MSP430 RESET Vector
+            DW      main                   
             END
 
 //=============================================================            
