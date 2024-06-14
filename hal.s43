@@ -1,0 +1,217 @@
+#include  "bsplab5.h"
+
+              MODULE HAL
+              PUBLIC SysConfig, PrepareLCD, LCDData, LCDPrint,PORT1_ISR, ADC_VEC, divider, JumpLine
+              EXTERN GPIOconfig,TIMERconfig, StopWDT, ADCconfig
+              EXTERN state, Max2, Divided, Divisor, Quotient, Residue, result1, result2, Vmax
+              RSEG CODE
+;--------------------------------------------------------------------
+;             System Configuration  
+;--------------------------------------------------------------------
+SysConfig     call #StopWDT
+              call #GPIOconfig
+              call #TIMERconfig
+              call #ADCconfig
+              ;call #lcd_init
+              ret
+;----------------------------------------------------------------------- 
+;            Interrupts
+;-----------------------------------------------------------------------
+PORT1_ISR
+        delay #150
+        
+        ;; Interrupt from first push button connected to P2_0
+        bit.b #0x01, PBsArrIntPend
+        jnz push_button_2_0
+
+        bit.b #0x02, PBsArrIntPend
+        jnz push_button_2_1
+
+        bit.b #0x04, PBsArrIntPend
+        jnz push_button_2_2
+        
+        reti      ;; Another P2 interrupt has been occured
+        
+push_button_2_0
+        mov #1, state
+        jmp exit_low_power_mode
+push_button_2_1
+        mov #2, state                
+        jmp exit_low_power_mode  
+push_button_2_2
+        mov #3, state
+        ;; Now is a fall through
+exit_low_power_mode
+        bic.w #(CPUOFF+SCG0+SCG1), 0(sp)
+        bic.b #0x07, PBsArrIntPend ;; There are 2 push buttons
+        reti
+
+
+ADC_VEC      mov      &ADC10MEM, Max2
+             bic.w    #CPUOFF,0(SP)
+
+             reti
+;----------------------------------------------------------------------- 
+;            MACRO FUNCTIONS
+;-----------------------------------------------------------------------
+
+lcd_strobe MACRO
+        ;; E = 1
+        bis.b #LCD_E_PIN, LCD_Control_Port
+        nop
+        nop
+        
+        ;; E = 0
+        bic.b #LCD_E_PIN, LCD_Control_Port
+        ENDM
+        
+lcd_cmd MACRO command
+        ;; use delay 5 ms as described in the LCD Docs from lab3
+        delay_ms_loop 5
+        
+        mov.b command, LCD_Data_Port
+        
+        lcd_strobe
+        
+        ENDM             
+
+;----------------------------------------------------------------------- 
+;            FUNCTIONS
+;-----------------------------------------------------------------------
+
+lcd_init: ;LCD CONFIG
+      ;; E = 0
+      bic.b #LCD_RS_PIN, LCD_Control_Port ; write out to lcd in code
+      bic.b #LCD_RW_PIN, LCD_Control_Port ; write moode
+      bic.b #LCD_E_PIN, LCD_Control_Port ; enables signal
+     
+      ;; Delay 15ms and cmd 0x3F (for lcd config)
+      delay_ms_loop 15
+      mov.b #0x3F, LCD_Data_Port
+      lcd_strobe
+      
+      ;; Delay 5ms and cmd 0x3F
+      delay_ms_loop 5
+      mov.b #0x3F, LCD_Data_Port
+      lcd_strobe
+           
+      delay_ms_m
+      ;call #Delay100us
+      
+      mov.b #0x3F, LCD_Data_Port
+      lcd_strobe
+
+      lcd_cmd #0x3C
+      lcd_cmd #0x0F
+      lcd_cmd #0x01
+      lcd_cmd #0x06
+      lcd_cmd #0x80
+      lcd_cmd #0x02
+      ; bring "head" to the beginning or writing (in matrix)
+      ret
+
+JumpLine        lcd_cmd #0xC0 ; bring pointer to start of 1st line
+                ret
+
+PrepareLCD      lcd_cmd #0x01 ; clear lcd
+                lcd_cmd #0x02 ; bring pointer to start of 1st line
+                lcd_cmd #0x0C ; hide pointer
+                ret
+
+LCDData
+      ; delay_ms_loop 5
+      
+      ;; Data=0x00
+      xor.b LCD_Data_Port, LCD_Data_Port
+
+      bis.b #LCD_RS_PIN, LCD_Control_Port ;; Write to leds in ASCII
+      
+      mov.b r5, LCD_Data_Port ;; mov argument to port
+      lcd_strobe
+      bic.b #LCD_RS_PIN, LCD_Control_Port ;; RS: Write to leds in code
+
+      ret
+//------------------------------------------------------------------------------
+
+;; void lcd_print_digit(int one_digit)
+LCDPrint
+          cmp  #10, r5
+          jge  PrintHex
+          add  #'0', r5
+          call #LCDData
+          ret
+PrintHex  add  #'7', r5
+          call #LCDData
+          ret
+        
+;----------------------------------------------------------------------- 
+        
+DIV16bit        mov     #17,R9
+                clr     R8                ; Quotient register
+                mov.w   Divided,R12        ; Devided registers is R13,R12
+                clr     R13
+                mov.w   Divisor,R10        ; Divisor registers is R6
+DIVL3           rla     R8
+DIVL1           dec     R9
+                jz      DIVL2
+                rla     R12
+                rlc     R13
+                cmp     R10,R13
+                jlo     DIVL3
+                sub     R10,R13
+                setc
+                rlc     R8
+                jmp     DIVL1
+DIVL2           mov.w   R8,Quotient
+                mov.w   R13,Residue
+                ret
+                
+      
+divider      mov    R8, Divided
+             mov    #80,Divisor
+             call   #DIV16bit
+
+             add    #15,Quotient
+
+             mov    Quotient, Divided
+             mov    #295,Divisor
+             call   #DIV16bit
+
+             mov    Quotient, result2
+
+             add    #0x30,result2
+             push   result2
+             call   #LCDPrint
+             mov    #'.', r5
+             call   #LCDData
+
+             mov    Residue, Divided
+             mov    #31,Divisor
+             call   #DIV16bit
+
+
+             mov    Quotient, result1
+             add    #0x30,result1
+             mov    result1, r5
+             call   #LCDPrint
+             
+             mov    Residue, Divided
+             mov    #3,Divisor
+             call   #DIV16bit
+             
+             mov    Quotient, result1
+             add    #0x30,result1
+             mov    result1, r5
+             call   #LCDPrint
+             ret
+        
+;----------------------------------------------------------------------------------
+        
+        ENDMOD
+
+
+        END
+
+
+ 
+ 

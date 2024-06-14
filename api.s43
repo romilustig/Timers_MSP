@@ -1,0 +1,236 @@
+#include  "bsplab5.h"
+
+             MODULE API
+             PUBLIC STATE1FUNC, STATE2FUNC
+             EXTERN PrepareLCD, LCDData, LCDPrint, DisplayStr, ADCconfig, divider, JumpLine
+             EXTERN state, Max2, Divided, Divisor, Quotient, Residue, result1, result2, Vmax
+
+             RSEG CODE
+;-------------------------------------------------------------
+
+;----------------------------------------------------------------------------------------------
+;            STATE 1- counting down in binary 
+;---------------------------------------------------------------------------------------------- 
+     
+STATE1FUNC   
+             call #PrepareLCD
+Loop         call #ADCconfig
+             bis  #ENC+ADC10SC,&ADC10CTL0_ ; ADC10 enabled,Start sample-and-conversion
+
+             clr     Vmax
+             clr     R15
+             clr     R13
+             
+MaxVCheck    cmp     #20000,R15  ;20000 samples to find Vmax
+             jz      FTH
+             inc     R15
+             call    #ADCconfig
+             bis     #ENC+ADC10SC,&ADC10CTL0_ ; 1 sample each time
+             bis.w   #CPUOFF+GIE,SR  ; sleep mode
+             cmp     #1,state
+             jnz     FinishState1
+             cmp     Max2, Vmax
+             jge     MaxVCheck ; Vmax is bigger
+             mov     Max2,Vmax
+             jmp     MaxVCheck
+
+FTH          clr     R15
+             rra     Vmax
+             rra     Vmax  ; divide by 4
+             clr     R13
+ 
+COUNT        cmp     #20000,R15
+             jz      Shape
+             inc     R15
+             call    #ADCconfig
+             bis     #ENC+ADC10SC,&ADC10CTL0_
+             bis.w   #CPUOFF+GIE,SR  
+             cmp     #1,state
+             jnz     FinishState1
+             cmp     Max2, Vmax ; after division
+             jn      COUNT
+             inc     R13
+             jmp     COUNT
+
+Shape        clr     &ADC10CTL0_
+             clr     &ADC10CTL1_ ; no more samples
+             clr     Vmax
+             clr     R15
+             call    #DisplayLCD
+             cmp     #5000,R13
+             jn      printtriangle
+             
+             cmp     #6500,R13
+             jn      printsine
+             
+             
+             mov  #'p', r5 ; print pwm
+             call #LCDData  
+
+             mov  #'w', r5
+             call #LCDData
+            
+             mov  #'m', r5
+             call  #LCDData
+             delay  #150
+             CLR   R13
+
+             jmp    Loop
+
+printsine             
+             mov  #'s', r5 ; print pwm
+             call #LCDData  
+
+             mov  #'i', r5
+             call  #LCDData
+            
+             mov   #'n', r5
+             call  #LCDData
+             delay  #150
+             CLR   R13
+
+             jmp    Loop
+
+
+printtriangle
+             mov  #'t', r5 ; print pwm
+             call #LCDData  
+
+             mov  #'r', r5
+             call #LCDData
+            
+             mov   #'i', r5
+             call   #LCDData
+             delay  #150
+             CLR    R13
+
+             jmp    Loop
+
+
+FinishState1 clr     &ADC10CTL0_
+             clr     &ADC10CTL1_  ; no more samples
+             ret
+
+
+
+STATE2FUNC  dint
+            call #PrepareLCD
+            eint
+            ;call #Display2
+Display2    mov  #'V', r5
+            call #LCDData  
+
+            mov  #'a', r5
+            call #LCDData
+            
+            mov #'v', r5
+            call #LCDData
+            
+            mov  #'g', r5
+            call #LCDData  
+
+            mov  #'=', r5
+            call #LCDData
+            
+            mov  #' ', r5
+            call #LCDData
+
+            mov    #0, R10
+            clr    R8
+            clr    R9
+            
+cons2       call   #ADCconfig
+            bis    #ENC+ADC10SC,&ADC10CTL0_  ; ADC10 enabled,Start sample-and-conversion
+            bis.w  #CPUOFF+GIE,SR 
+            cmp     #2,state
+            jnz     FinishState2
+
+            cmp     #200 ,R10 ; adds average only once in 200 samples
+            jz      addAVG
+            inc     R10
+            jmp     cons2
+  
+addAVG      clr     R10
+            add     Max2, R8  ; samples are stored in Max2 - changed register
+            inc     R9
+            cmp     #80,R9
+            jnz     cons2
+
+
+Divide3     clr R10
+            mov #100, R9
+            call #divider
+            
+            mov  #'[', r5
+            call #LCDData  
+
+            mov  #'v', r5
+            call #LCDData
+            
+            mov  #']', r5
+            call #LCDData
+            jmp   Display2
+
+FinishState2
+             clr     &ADC10CTL0_
+             clr     &ADC10CTL1_  ; no more samples
+             ret
+
+;----------------------------------------------------------------------- 
+;            LCD FUNCTIONS
+;-----------------------------------------------------------------------
+
+
+DisplayLCD 
+
+            mov  #'S', r5
+            call #LCDData  
+
+            mov  #'i', r5
+            call #LCDData
+            
+            mov  #'g', r5
+            call #LCDData
+            
+            mov  #'n', r5
+            call #LCDData  
+
+            mov  #'a', r5
+            call #LCDData
+            
+            mov  #'l', r5
+            call #LCDData
+            
+            mov  #' ', r5
+            call #LCDData
+            
+            mov  #'S', r5
+            call #LCDData  
+
+            mov  #'h', r5
+            call #LCDData
+            
+            mov  #'a', r5
+            call #LCDData
+            
+            mov  #'p', r5
+            call #LCDData  
+
+            mov  #'e', r5
+            call #LCDData
+            
+            mov  #':', r5
+            call #LCDData
+
+            //call #JumpLine  ; move to second line
+            
+            ret
+            
+            
+            
+// SECOND FUNCTION:
+            
+
+
+             ENDMOD    
+             END

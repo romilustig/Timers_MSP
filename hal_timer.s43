@@ -1,0 +1,131 @@
+#include "bsp.h"
+
+//==============================================================
+
+      MODULE    TimerLib
+      PUBLIC    calibrate_timer
+      PUBLIC    setup_timer_output, TA0_ISR, enable_timer_output_int, disable_timer_output_int
+      PUBLIC    setup_capture_timer, TIMER_CAPTURE_ISR, enable_timer_capture_int, disable_timer_capture_int
+      EXTERN    counter_f, timer_counter, timer_int_flag, timer_int_flag, timer_capture_int_flag, string_state_counter
+      RSEG      CODE
+;-------------------------------------------------------------------------------
+
+calibrate_timer:
+#ifdef LAB
+            bis.b   #XCAP14PF,&FLL_CTL0     ; Configure load caps
+OFIFGcheck  bic.b   #OFIFG,&IFG1 ; Clear OFIFG
+            mov.w   #047FFh,R15 ; Wait for OFIFG to set again if
+OFIFGwait   dec.w   R15 ; not stable yet
+            jnz     OFIFGwait
+            bit.b   #OFIFG,&IFG1 ; Has it set again?
+            jnz     OFIFGcheck ; If so, wait some more
+#endif            
+              ret
+;-------------------------------------------------------------------------------
+
+setup_timer_output:
+
+      mov.w   #0xFFFF,&CCR0           ; counts to go 0xFFFF
+      
+      ;Paramters to config
+      ;TASSEL_X 0-TACLK, 1-ACLK,  2-SMCLK,  3-INCLK  
+      ;MC_X     0-Stop,  1-Up  ,  2-Conti,  3-UpDown
+      ;ID_X     0-div_1, 1-div_2, 2-div_4,  3-div_8
+      ;TAIE     Timer_A interrupt enable
+      mov.w   #(TASSEL_2+MC_3+ID_3),&TACTL
+
+      ret
+      
+      
+;setup_pwm:
+      ;bis.b   #00Ch,&P1DIR            ; P1.2 and P1.3 output
+      ;bis.b   #00Ch,&P1SEL            ; P1.2 and P1.3 TA1/2 otions
+      ;mov.w   #OUTMOD_7,&CCTL1        ; CCR1 reset/set
+      ;mov.w   #07FFFh,&CCR1           ;50% from CCRO
+      ;mov.w   #TASSEL_2+MC_1,&TACTL   ;UP
+;     ret
+
+;-------------------------------------------------------------------------------
+
+enable_timer_output_int:
+      bis.w   #(CCIE),&CCTL0
+      ret
+;-------------------------------------------------------------------------------
+
+disable_timer_output_int:
+      bic.w #(CCIE), &CCTL0
+      ret
+;-------------------------------------------------------------------------------
+
+TA0_ISR 
+    dec.w timer_counter
+    inc.w timer_int_flag ; flag used to mark interrupt has occured
+    inc.w string_state_counter
+    bic.w #(TAIFG),&TACTL
+    reti
+;-------------------------------------------------------------------------------
+; We need to mesure [20 , 20,000[Hz] using CC
+
+setup_capture_timer:
+        ; coonect the signal genrator to this pin the time config to this pin P2.4 CCI1B
+        bic.b   #CAPTURE_PIN, CAPTURE_TIMER_DIR
+        bis.b   #CAPTURE_PIN, CAPTURE_TIMER_SELECT
+        
+        ; from data_sheet page 7 P2.4 Timer1_A, capture: CCI2A input from this 
+        ; you need to select CCIS_0
+
+        ;Paramters to config
+        ;TASSEL_X 0-TACLK, 1-ACLK,  2-SMCLK,  3-INCLK  
+        ;MC_X     0-Stop,  1-Up  ,  2-Conti,  3-UpDown
+        ;ID_X     0-div_1, 1-div_2, 2-div_4,  3-div_8
+        ;TACLR    clr Timer
+        ;TAIE     interrupt enable
+        mov.w   #(TIMER_SEL_SMCLK+MC_2+ID_0),&TIMER_CAPTURE_CONTROL
+          
+        ; Configure the TA1CCR2 to do input capture
+        ; TA0CCR1 Capture mode; CCI1A; Both Rising and Falling Edge; interrupt enable
+        ; CAP   capture mode
+        ; CM_X 0-No capture, 1-rising edge, 2-falling edge, 3 -both
+        ; CCIE  capture interrupt enable
+        ; SCS   synchronize the capture with the next timer clk
+        ; CCIS_x - Select input pin
+        mov.w   #(CAP + CM_1 + SCS + CCIS_0),&TIMER_CAPTURE_CHANNEL_CONTROL
+        
+        ret
+;-------------------------------------------------------------------------------
+
+enable_timer_capture_int:
+      bis.w #(CCIE), &TIMER_CAPTURE_CHANNEL_CONTROL
+      ret
+;-------------------------------------------------------------------------------
+
+disable_timer_capture_int:
+      bic.w #(CCIE), &TIMER_CAPTURE_CHANNEL_CONTROL
+      ret
+;-------------------------------------------------------------------------------
+
+TIMER_CAPTURE_ISR
+            add.w &TIMER_CAPTURE_INT_VECTOR,PC
+            reti          ; No interrupt
+            reti          ; CC1
+            jmp ccr2_out  ; CC2
+            reti          ; RES
+            reti          ; RES
+            reti          ; Overflow
+            reti          ; RES
+            reti          ; RES
+;-------------------------------------------------------------------------------
+
+ccr2_out:
+      ;  capture on CCR2
+      mov TIMER_CAPTURE_CHANNEL,  counter_f 
+      add #0x15,    counter_f     ; To fix calibration of timer
+      mov #0x00,    &TIMER_CAPTURE_REGISTER         ; reset counter
+      inc timer_capture_int_flag
+      reti
+;-------------------------------------------------------------------------------
+      
+  ENDMOD
+//=============================================================            
+  
+END

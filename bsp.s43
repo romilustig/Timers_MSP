@@ -1,0 +1,77 @@
+#include  "bsplab5.h"
+
+       MODULE PortLeds
+       PUBLIC StopWDT, GPIOconfig, TIMERconfig, ADCconfig
+       EXTERN PORT1_ISR, ADC_VEC
+       EXTERN main
+       RSEG   CODE
+
+;-------------------------------------------------------------------------------
+
+; In our specfic MCU(MSP430G2553) we clr P2SEL with 0xC0 to set P2.6, P2.7 to be GPIOs
+; For more information about this specific value one must read in page53, page55 
+StopWDT      mov.w   #WDTPW+WDTHOLD,&WDTCTL
+             ret
+;-----------------------------------------------------------------------------  
+;           GPIO configuration
+;-----------------------------------------------------------------------------
+
+GPIOconfig
+      ;; Init the LCD Data Pin's P1.0-7 as Output and turn them off
+      bic.b   #0xff, LCD_Data_PortSel
+      bis.b   #0xff, LCD_Data_PortDir            
+      ;clr.b   #0xff, &P1OUT
+
+      ;; Set LCD_Control_PortSel to output in correct pins and set them as out
+      bic.b   #0xE0, LCD_Control_PortSel
+      bis.b   #0xE0, LCD_Control_PortDir
+      bic.b   #0xE0, LCD_Control_Port
+
+      ;; Set button as input and pull up
+      bic.b #0x03, PBsArrPortSel
+      bic.b #0x03, PBsArrPortDir
+      bis.b #0x03, PBsArrIntEdgeSel ;; Make pbs as pull up
+      ; bic.b #0x0C, PushButtonPort_Int_Edge ;; Make button as pull down
+
+      bis.b #0x03, PBsArrIntEn
+      bic.b #0x03, PBsArrIntPend    
+
+      ret
+
+;------------------------------------------------------------------------------------- 
+;            Timers congiguration 
+;-------------------------------------------------------------------------------------
+
+TIMERconfig
+      nop
+      ret
+
+;-------------------------------------------------------------------------------------- 
+;            ADC configuration 
+;--------------------------------------------------------------------------------------
+
+ADCconfig
+      bis.b  #0x08,&ADC10AE0   ; P1.3 ADC10 function and enable
+      mov    #ADC10SHT_0+ADC10ON+ADC10IE,&ADC10CTL0  ;4 x CLKS ,ADC10 on,interrupt enabled
+      mov    #INCH_3+ADC10SSEL_3+ADC10DIV_0+CONSEQ_0,&ADC10CTL1 ;A3,SMCLK,/1,Single-channel-single-conversion
+      ret
+
+
+      ENDMOD
+      
+      END
+
+
+;--------------------------------------------------------------------------------------
+;*******************************************************************************
+            COMMON  INTVEC  ;Interrupt Vectors-Begins a common segment INTVEC 
+;*******************************************************************************         
+            ORG     ADC10_VECTOR            ; ADC10 Interrupt Vector
+            DW      ADC_VEC
+            ORG     PORT1_VECTOR            ;PORT1 Interrupt Vector
+            DW      PORT1_ISR
+            ORG     RESET_VECTOR            ; MSP430 RESET Vector
+            DW      main                 
+            END
+
+//=============================================================            
